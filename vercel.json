@@ -1,7 +1,8 @@
 {
   "version": 2,
   "functions": {
-    "api/index.py": {
+    "api/**/*.py": {
+      "runtime": "@vercel/python@4.2.0",
       "maxDuration": 60
     }
   },
