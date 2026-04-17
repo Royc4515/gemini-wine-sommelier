@@ -1,14 +1,14 @@
 {
   "version": 2,
   "functions": {
-    "api/webhook.py": {
-      "maxDuration": 60
+    "api/*.py": {
+      "runtime": "python@3.9"
     }
   },
   "routes": [
     {
-      "src": "/api/webhook",
-      "dest": "api/webhook.py"
+      "src": "/api/(.*)",
+      "dest": "api/$1.py"
     }
   ]
 }
