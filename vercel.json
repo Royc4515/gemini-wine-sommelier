@@ -1,9 +1,14 @@
 {
   "version": 2,
+  "functions": {
+    "api/index.py": {
+      "maxDuration": 60
+    }
+  },
   "routes": [
     {
       "src": "/api/webhook",
-      "dest": "api/webhook.py"
+      "dest": "/api/index.py"
     }
   ]
 }
