@@ -21,13 +21,10 @@ class TelegramClient:
     def send_message(self, chat_id: int | str, text: str) -> dict:
         """Send a text message to *chat_id*.
 
-        Long messages are automatically truncated to Telegram's 4096 char limit.
-        Returns the parsed JSON response from the API.
+        Messages longer than 4000 chars are split into multiple sequential
+        messages so the user always receives the full response.
+        Returns the parsed JSON response from the last chunk sent.
         """
-        max_length = 4096
-        if len(text) > max_length:
-            text = text[: max_length - 3] + "..."
-
         import urllib.error
         import re
 
@@ -41,11 +38,9 @@ class TelegramClient:
         # Convert Markdown `# Headers` to bold HTML lines
         safe_text = re.sub(r'^#+\s+(.*)', r'<b>\1</b>', safe_text, flags=re.MULTILINE)
 
-        payload_dict = {
-            "chat_id": chat_id,
-            "text": safe_text,
-            "parse_mode": "HTML",
-        }
+        # Split into ≤4000-char chunks (safe margin below 4096)
+        chunk_size = 4000
+        chunks = [safe_text[i:i + chunk_size] for i in range(0, len(safe_text), chunk_size)]
 
         def _send(data: dict):
             req = urllib.request.Request(
@@ -57,17 +52,26 @@ class TelegramClient:
             with urllib.request.urlopen(req) as response:
                 return json.loads(response.read().decode("utf-8"))
 
-        try:
-            return _send(payload_dict)
-        except urllib.error.HTTPError as e:
-            error_body = e.read().decode("utf-8")
-            if "can't parse entities" in error_body.lower() or "bad request" in error_body.lower():
-                # Fallback: remove parse_mode
-                payload_dict.pop("parse_mode", None)
-                try:
-                    return _send(payload_dict)
-                except urllib.error.HTTPError as inner_e:
-                    inner_body = inner_e.read().decode('utf-8')
-                    raise Exception(f"Telegram API Error (Fallback): {inner_e.code} - {inner_body}") from inner_e
-            else:
-                raise Exception(f"Telegram API Error: {e.code} - {error_body}") from e
+        last_result = None
+        for chunk in chunks:
+            payload_dict = {
+                "chat_id": chat_id,
+                "text": chunk,
+                "parse_mode": "HTML",
+            }
+            try:
+                last_result = _send(payload_dict)
+            except urllib.error.HTTPError as e:
+                error_body = e.read().decode("utf-8")
+                if "can't parse entities" in error_body.lower() or "bad request" in error_body.lower():
+                    # Fallback: send without parse_mode
+                    payload_dict.pop("parse_mode", None)
+                    try:
+                        last_result = _send(payload_dict)
+                    except urllib.error.HTTPError as inner_e:
+                        inner_body = inner_e.read().decode('utf-8')
+                        raise Exception(f"Telegram API Error (Fallback): {inner_e.code} - {inner_body}") from inner_e
+                else:
+                    raise Exception(f"Telegram API Error: {e.code} - {error_body}") from e
+
+        return last_result
