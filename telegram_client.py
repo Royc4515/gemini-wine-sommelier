@@ -28,18 +28,46 @@ class TelegramClient:
         if len(text) > max_length:
             text = text[: max_length - 3] + "..."
 
-        payload = json.dumps({
+        import urllib.error
+        import re
+
+        # Escape unhandled <, >, & to satisfy Telegram HTML parser constraints
+        safe_text = text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+        # Convert Gemini's **bold** Markdown to <b>...</b>
+        safe_text = re.sub(r'\*\*(.*?)\*\*', r'<b>\1</b>', safe_text, flags=re.DOTALL)
+        # Convert Gemini's *italic* to <i>...</i>
+        safe_text = re.sub(r'(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)', r'<i>\1</i>', safe_text, flags=re.DOTALL)
+        # Convert Markdown `# Headers` to bold HTML lines
+        safe_text = re.sub(r'^#+\s+(.*)', r'<b>\1</b>', safe_text, flags=re.MULTILINE)
+
+        payload_dict = {
             "chat_id": chat_id,
-            "text": text,
-            "parse_mode": "Markdown",
-        }).encode("utf-8")
+            "text": safe_text,
+            "parse_mode": "HTML",
+        }
 
-        request = urllib.request.Request(
-            url=f"{self.api_url}/sendMessage",
-            data=payload,
-            headers={"Content-Type": "application/json"},
-            method="POST",
-        )
+        def _send(data: dict):
+            req = urllib.request.Request(
+                url=f"{self.api_url}/sendMessage",
+                data=json.dumps(data).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+                method="POST",
+            )
+            with urllib.request.urlopen(req) as response:
+                return json.loads(response.read().decode("utf-8"))
 
-        with urllib.request.urlopen(request) as response:
-            return json.loads(response.read().decode("utf-8"))
+        try:
+            return _send(payload_dict)
+        except urllib.error.HTTPError as e:
+            error_body = e.read().decode("utf-8")
+            if "can't parse entities" in error_body.lower() or "bad request" in error_body.lower():
+                # Fallback: remove parse_mode
+                payload_dict.pop("parse_mode", None)
+                try:
+                    return _send(payload_dict)
+                except urllib.error.HTTPError as inner_e:
+                    inner_body = inner_e.read().decode('utf-8')
+                    raise Exception(f"Telegram API Error (Fallback): {inner_e.code} - {inner_body}") from inner_e
+            else:
+                raise Exception(f"Telegram API Error: {e.code} - {error_body}") from e
