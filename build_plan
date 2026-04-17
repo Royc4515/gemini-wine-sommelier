@@ -1,0 +1,69 @@
+Project Overview:
+Build a stateless, serverless Telegram bot acting as a personalized AI Wine Sommelier, Inventory Manager, and Educator. The backend must be written in Python, designed to be deployed on Vercel as a Serverless Function. The AI logic will be powered by the gemini-2.5-flash model using the new google-genai SDK.
+
+Core Architectural Constraints:
+
+Zero Framework Bloat: Do not use FastAPI, Flask, or any external routing frameworks. To minimize Vercel cold-start latency, the routing layer must be implemented using Python's native http.server.BaseHTTPRequestHandler.
+
+Strict OOP & Clean Architecture: Divide the logic into modular classes (WineInventory, SommelierAI, TelegramClient).
+
+No Heavy Dependencies: Do not use pandas. Use Python's built-in csv and urllib.request for data ingestion and API calls.
+
+Statelessness: The application must maintain zero state between requests.
+
+Environment Variables Required:
+
+TELEGRAM_BOT_TOKEN, TELEGRAM_SECRET_TOKEN, ALLOWED_USER_ID, GEMINI_API_KEY, WINE_CSV_URL.
+
+File Structure & Responsibilities:
+
+1. wine_inventory.py (Data Layer)
+
+Method fetch_inventory(): Fetch CSV from WINE_CSV_URL using urllib.request (4s timeout). Decode with utf-8-sig.
+
+Method parse_inventory(): Use csv.DictReader.
+
+Skip rows where 'יקב' or 'שם היין' are empty.
+
+Filter out rows where 'סטטוס חדש' is "Finished".
+
+Method get_formatted_inventory(): Return a structured string containing: Winery, Wine Name, Vintage, Grapes, Status (Open/Closed), Purpose, and crucially the 'המלצת פתיחה' (Column L).
+
+2. sommelier_ai.py (Logic Layer)
+
+Initialize google-genai client for gemini-2.5-flash.
+
+System Instructions: > "You are an expert Sommelier, Inventory Manager, and Wine Educator. Your primary language is Hebrew.
+
+CONSTRAINTS: 1. Recommend only strictly Kosher, dry wines. 2. Prioritize Israeli wineries and market tools.
+TASTE PROFILE: User prefers top-tier producers (Flam, Raziel, Feldstein, Castel, Tzora). Loves Mediterranean varietals (Syrah, Carignan, GSM), Sangiovese, and heavy oak integration. Dislikes thin/cheap Merlot.
+INVENTORY & AGING: Prioritize 'Open' bottles. Strictly enforce the 'המלצת פתיחה' provided in the data. Discourage opening bottles marked to be held.
+ROLES:
+
+GASTRONOMY: Explain the chemical synergy in food pairings.
+
+ADVISOR: Analyze inventory gaps and suggest specific Israeli purchases to balance the cellar.
+
+MENTOR: Use professional terminology (tannins, malolactic, terroir) and explain the why behind every insight."
+
+3. telegram_client.py (Integration Layer)
+
+Simple wrapper for POST requests to Telegram's sendMessage API using urllib.request.
+
+4. api/webhook.py (Routing Layer - Vercel Entrypoint)
+
+Inherit from BaseHTTPRequestHandler.
+
+Security: Validate X-Telegram-Bot-Api-Secret-Token.
+
+Authorization: Check message.chat.id against ALLOWED_USER_ID. Drop unauthorized requests.
+
+Safety: Ignore non-text messages.
+
+Execute flow: Fetch Data -> Query Gemini -> Send Response -> Return HTTP 200.
+
+5. Deployment Configuration
+
+requirements.txt: Pin google-genai. No FastAPI/Uvicorn.
+
+vercel.json: Configure @vercel/python runtime. Set "maxDuration": 60 and routes to api/webhook.py.
