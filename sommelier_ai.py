@@ -13,9 +13,9 @@ from google.genai import types
 
 
 # ------------------------------------------------------------------
-# System prompt — injected once per request (stateless)
+# System prompt — base persona (always injected)
 # ------------------------------------------------------------------
-SYSTEM_INSTRUCTION = (
+_BASE_SYSTEM_INSTRUCTION = (
     "You are an expert Sommelier, Inventory Manager, and Wine Educator. Your primary language is Hebrew, "
     "but you speak in a natural, friendly Israeli tone (בגובה העיניים, זורם, לא מליצי).\n\n"
     "CONSTRAINTS & BEHAVIORS:\n"
@@ -32,48 +32,127 @@ SYSTEM_INSTRUCTION = (
     "6. CONCISENESS: Keep responses structured, focused, and under 400 words. Never cut off mid-sentence."
 )
 
+# Appended to system prompt when long-term memory exists
+_MEMORY_SECTION_TEMPLATE = (
+    "\n\nזיכרון משיחות קודמות:\n"
+    "{summary}\n"
+    "השתמש בזיכרון הזה כהקשר רקע. אל תחזור עליו במפורש אלא אם נשאלת ישירות."
+)
+
+# System instruction for the summarize() helper
+_SUMMARIZER_SYSTEM = (
+    "You are a concise summarizer. "
+    "When given a prompt and text, produce only the requested summary — "
+    "no preamble, no explanation, just the bullet points."
+)
+
 
 class SommelierAI:
-    """Stateless façade over the Gemini generative model."""
+    """Façade over the Gemini generative model.
 
-    MODEL_NAME = "gemini-2.5-flash"
+    Supports multi-turn conversation (ask) and single-turn summarization
+    (summarize) used by the memory layer.
+    """
+
+    MODEL_NAME = "gemini-1.5-flash"
+    _MAX_RETRIES = 3
+    _RETRY_STATUSES = ("503", "unavailable", "overloaded")
 
     def __init__(self):
         api_key: str = os.environ["GEMINI_API_KEY"]
         self.client = genai.Client(api_key=api_key)
 
-    def ask(self, user_message: str, inventory_context: str) -> str:
-        """Send a single user turn together with the current inventory context.
+    # ------------------------------------------------------------------
+    # Public: conversation
+    # ------------------------------------------------------------------
 
-        Retries up to 3 times with exponential backoff on transient errors.
-        Returns the model's text response.
-        """
-        contents = (
+    def ask(
+        self,
+        user_message: str,
+        inventory_context: str,
+        history: list[dict] | None = None,
+        long_term_summary: str = "",
+    ) -> str:
+        """Send a user turn and return the model's text response."""
+        system_instruction = _BASE_SYSTEM_INSTRUCTION
+        if long_term_summary and long_term_summary.strip():
+            system_instruction += _MEMORY_SECTION_TEMPLATE.format(
+                summary=long_term_summary.strip()
+            )
+
+        gemini_history = []
+        for msg in (history or []):
+            gemini_history.append(
+                types.Content(
+                    role=msg["role"],
+                    parts=[types.Part(text=msg["text"])],
+                )
+            )
+
+        current_message = (
             f"הנה המלאי הנוכחי שלי:\n\n{inventory_context}\n\n"
             f"השאלה שלי:\n{user_message}"
         )
 
-        max_retries = 3
-        last_error = None
+        return self._call_with_retry(
+            lambda: self._chat_send(system_instruction, gemini_history, current_message)
+        )
 
-        for attempt in range(max_retries):
+    # ------------------------------------------------------------------
+    # Public: summarization (used by ChatMemory)
+    # ------------------------------------------------------------------
+
+    def summarize(self, prompt: str, text: str) -> str:
+        """Single-turn summarization call."""
+        contents = f"{prompt}{text}"
+        return self._call_with_retry(
+            lambda: self._single_generate(contents)
+        )
+
+    # ------------------------------------------------------------------
+    # Private: API calls
+    # ------------------------------------------------------------------
+
+    def _chat_send(
+        self,
+        system_instruction: str,
+        history: list,
+        message: str,
+    ) -> str:
+        """Create a chat session with history and send one message."""
+        chat = self.client.chats.create(
+            model=self.MODEL_NAME,
+            history=history,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+            ),
+        )
+        response = chat.send_message(message)
+        return response.text or "לא הצלחתי לייצר תשובה. נסה שוב."
+
+    def _single_generate(self, contents: str) -> str:
+        """Single-turn generate_content call (for summarization)."""
+        response = self.client.models.generate_content(
+            model=self.MODEL_NAME,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=_SUMMARIZER_SYSTEM,
+            ),
+        )
+        return response.text or ""
+
+    def _call_with_retry(self, fn) -> str:
+        """Execute *fn()* with exponential backoff on transient errors."""
+        last_error = None
+        for attempt in range(self._MAX_RETRIES):
             try:
-                response = self.client.models.generate_content(
-                    model=self.MODEL_NAME,
-                    contents=contents,
-                    config=types.GenerateContentConfig(
-                        system_instruction=SYSTEM_INSTRUCTION,
-                    ),
-                )
-                return response.text or "לא הצלחתי לייצר תשובה. נסה שוב."
+                return fn()
             except Exception as exc:
                 last_error = exc
-                # Only retry on transient / overload errors
                 err_str = str(exc).lower()
-                if "503" in err_str or "unavailable" in err_str or "overloaded" in err_str:
-                    if attempt < max_retries - 1:
-                        time.sleep(2 ** attempt)  # 1s, 2s
+                is_transient = any(s in err_str for s in self._RETRY_STATUSES)
+                if is_transient and attempt < self._MAX_RETRIES - 1:
+                    time.sleep(2 ** attempt)
                     continue
-                raise  # Non-transient error — fail immediately
-
-        raise last_error  # All retries exhausted
+                raise
+        raise last_error

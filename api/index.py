@@ -12,7 +12,8 @@ import sys
 # Allow imports from the project root (one level up from api/)
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from sommelier_ai import SommelierAI  # noqa: E402
+from chat_memory import ChatMemory        # noqa: E402
+from sommelier_ai import SommelierAI      # noqa: E402
 from telegram_client import TelegramClient  # noqa: E402
 from wine_inventory import WineInventory  # noqa: E402
 
@@ -70,13 +71,55 @@ def application(environ, start_response):
             pass
         return _respond("200 OK", "OK — unauthorized user")
 
+    # ---- Handle bot commands (/reset, /start) ----
+    stripped = text.strip()
+    if stripped.startswith("/"):
+        command = stripped.split()[0].lower()
+
+        if command in ("/reset", "/start"):
+            try:
+                ChatMemory().clear(str(chat_id))
+            except Exception:
+                pass  # Don't block the response if memory clear fails
+
+            if command == "/reset":
+                reply = (
+                    "✅ הזיכרון נוקה! אפשר להתחיל שיחה חדשה.\n"
+                    "אני לא זוכר שיחות קודמות מעכשיו 🍷"
+                )
+            else:  # /start
+                reply = (
+                    "שלום! אני הסומלייה האישי שלך 🍷\n\n"
+                    "אפשר לשאול אותי על:\n"
+                    "• המלצות יין למאכל\n"
+                    "• ניתוח המלאי שלך\n"
+                    "• טרמינולוגיה וחינוך יין\n"
+                    "• פערים במרתף ורכישות מומלצות\n\n"
+                    "שלח /reset כדי לנקות את הזיכרון."
+                )
+            try:
+                TelegramClient().send_message(chat_id=chat_id, text=reply)
+            except Exception:
+                pass
+            return _respond("200 OK", "OK")
+
     # --- Execute flow ---
     try:
+        memory = ChatMemory()
+        history, long_term_summary = memory.get_context(str(chat_id))
+
         inventory = WineInventory()
         inventory_text = inventory.get_formatted_inventory()
 
         ai = SommelierAI()
-        answer = ai.ask(user_message=text, inventory_context=inventory_text)
+        answer = ai.ask(
+            user_message=text,
+            inventory_context=inventory_text,
+            history=history,
+            long_term_summary=long_term_summary,
+        )
+
+        memory.save_turn(str(chat_id), text, answer)
 
         telegram = TelegramClient()
         telegram.send_message(chat_id=chat_id, text=answer)

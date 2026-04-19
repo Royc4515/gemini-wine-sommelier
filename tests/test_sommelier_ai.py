@@ -20,6 +20,8 @@ _google_pkg = sys.modules.get("google") or types.ModuleType("google")
 _genai_mod = types.ModuleType("google.genai")
 _types_mod = types.ModuleType("google.genai.types")
 _types_mod.GenerateContentConfig = MagicMock()
+_types_mod.Content = MagicMock()
+_types_mod.Part = MagicMock()
 _genai_mod.types = _types_mod
 _genai_mod.Client = MagicMock()
 _google_pkg.genai = _genai_mod
@@ -37,30 +39,32 @@ class TestSommelierAI(unittest.TestCase):
     def setUp(self):
         self.ai = SommelierAI()
         
-        # Create a mock for generate_content
         self.mock_client = MagicMock()
         self.ai.client = self.mock_client
+        
+        self.mock_chat = MagicMock()
+        self.mock_client.chats.create.return_value = self.mock_chat
 
     def test_successful_ask(self):
         # Mock a successful response
         mock_response = MagicMock()
         mock_response.text = "This is a wine recommendation."
-        self.mock_client.models.generate_content.return_value = mock_response
+        self.mock_chat.send_message.return_value = mock_response
 
         result = self.ai.ask("What should I drink?", "Inventory: Wine A")
         
         self.assertEqual(result, "This is a wine recommendation.")
-        self.mock_client.models.generate_content.assert_called_once()
+        self.mock_chat.send_message.assert_called_once()
         
         # Verify contents include context
-        call_args = self.mock_client.models.generate_content.call_args[1]
-        self.assertIn("Inventory: Wine A", call_args["contents"])
-        self.assertIn("What should I drink?", call_args["contents"])
+        call_args = self.mock_chat.send_message.call_args[0][0]
+        self.assertIn("Inventory: Wine A", call_args)
+        self.assertIn("What should I drink?", call_args)
 
     def test_fallback_when_text_empty(self):
         mock_response = MagicMock()
         mock_response.text = ""
-        self.mock_client.models.generate_content.return_value = mock_response
+        self.mock_chat.send_message.return_value = mock_response
 
         result = self.ai.ask("test", "test")
         self.assertIn("לא הצלחתי", result)
@@ -71,16 +75,17 @@ class TestSommelierAI(unittest.TestCase):
         mock_response = MagicMock()
         mock_response.text = "Success on try 3"
         
-        self.mock_client.models.generate_content.side_effect = [
+        self.mock_client.chats.create.side_effect = [
             Exception("503 Service Unavailable"),
             Exception("overloaded"),
-            mock_response
+            self.mock_chat
         ]
+        self.mock_chat.send_message.return_value = mock_response
 
         result = self.ai.ask("test", "test")
         
         self.assertEqual(result, "Success on try 3")
-        self.assertEqual(self.mock_client.models.generate_content.call_count, 3)
+        self.assertEqual(self.mock_client.chats.create.call_count, 3)
         self.assertEqual(mock_sleep.call_count, 2)
         # Sleep values should be 2**0=1 and 2**1=2
         self.assertEqual(mock_sleep.call_args_list[0][0][0], 1)
@@ -89,24 +94,25 @@ class TestSommelierAI(unittest.TestCase):
     @patch("time.sleep")
     def test_exhaust_retries_on_503(self, mock_sleep):
         # Fail all 3 times with 503
-        self.mock_client.models.generate_content.side_effect = Exception("503 Service Unavailable")
+        self.mock_client.chats.create.side_effect = Exception("503 Service Unavailable")
 
         with self.assertRaisesRegex(Exception, "503 Service Unavailable"):
             self.ai.ask("test", "test")
             
-        self.assertEqual(self.mock_client.models.generate_content.call_count, 3)
+        self.assertEqual(self.mock_client.chats.create.call_count, 3)
         self.assertEqual(mock_sleep.call_count, 2) # Wait after try 1 and 2, but not 3
 
     @patch("time.sleep")
     def test_fail_immediately_on_400(self, mock_sleep):
         # Fail with non-retriable error
-        self.mock_client.models.generate_content.side_effect = Exception("400 Bad Request")
+        self.mock_client.chats.create.side_effect = Exception("400 Bad Request")
 
         with self.assertRaisesRegex(Exception, "400 Bad Request"):
             self.ai.ask("test", "test")
             
-        self.assertEqual(self.mock_client.models.generate_content.call_count, 1)
+        self.assertEqual(self.mock_client.chats.create.call_count, 1)
         mock_sleep.assert_not_called()
 
 if __name__ == "__main__":
     unittest.main()
+
