@@ -60,10 +60,7 @@ class SommelierAI:
 
     def __init__(self):
         api_key: str = os.environ["GEMINI_API_KEY"]
-        self.client = genai.Client(
-            api_key=api_key,
-            http_options={'api_version': 'v1'}
-        )
+        self.client = genai.Client(api_key=api_key)
 
     # ------------------------------------------------------------------
     # Public: conversation
