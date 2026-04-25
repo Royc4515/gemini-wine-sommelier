@@ -159,8 +159,8 @@ class SommelierAI:
                     last_error = exc
                     err_str = str(exc).lower()
                     
-                    if "429" in err_str or "quota exceeded" in err_str or "resource exhausted" in err_str:
-                        sys.stderr.write(f"WARNING: Model {model_name} exhausted quota. Falling back to next model.\n")
+                    if "429" in err_str or "quota exceeded" in err_str or "resource exhausted" in err_str or "404" in err_str or "not found" in err_str:
+                        sys.stderr.write(f"WARNING: Model {model_name} failed (Quota/NotFound). Falling back to next model.\n")
                         break  # Break inner loop, next model
 
                     is_transient = any(s in err_str for s in self._RETRY_STATUSES)
