@@ -1,4 +1,4 @@
-# 🍷 Gemini Wine Sommelier
+# 🍷 Gemini Sommelier Bot
 
 [![Python](https://img.shields.io/badge/Python-3.9%2B-blue?logo=python&logoColor=white)](https://python.org)
 [![Gemini API](https://img.shields.io/badge/Gemini_API-Enabled-orange?logo=google)](https://ai.google.dev/)
