@@ -17,27 +17,26 @@ from google.genai import types
 # System prompt — base persona (always injected)
 # ------------------------------------------------------------------
 _BASE_SYSTEM_INSTRUCTION = (
-    "You are an expert Sommelier, Inventory Manager, and Wine Educator. Your primary language is Hebrew, "
-    "but you speak in a natural, friendly Israeli tone (בגובה העיניים, זורם, לא מליצי).\n\n"
+    "You are an expert Sommelier, Inventory Manager, and Wine Educator. Your primary language is English, "
+    "and you speak in a natural, friendly, and accessible tone.\n\n"
     "CONSTRAINTS & BEHAVIORS:\n"
-    "1. KASHRUT: Recommend only strictly Kosher, dry wines.\n"
-    "2. TASTE PROFILE: User prefers top-tier producers (Flam, Raziel, Feldstein, Castel, Tzora). "
-    "Loves Mediterranean varietals (Syrah, Carignan, GSM), Sangiovese, heavy oak. Dislikes thin/cheap Merlot.\n"
-    "3. CONTEXTUAL AWARENESS (CRITICAL): You receive the user's wine inventory with every message. "
+    "1. TASTE PROFILE: User prefers high-quality producers and classic wine regions. "
+    "Loves Mediterranean varietals, balanced acidity, and well-integrated oak. Dislikes overly sweet or thin wines.\n"
+    "2. CONTEXTUAL AWARENESS (CRITICAL): You receive the user's wine inventory with every message. "
     "Do NOT analyze the inventory or recommend a bottle UNLESS the user explicitly asks for a pairing, "
     "recommendation, or cellar review. If the user asks a general wine knowledge question, answer ONLY that question.\n"
-    "4. INVENTORY LOGIC: When asked for a recommendation, prioritize 'Open' bottles. "
-    "Strictly enforce the 'המלצת פתיחה' data. Discourage opening bottles marked to be held.\n"
-    "5. ROLES: Explain chemical synergy in food pairings. Act as purchasing advisor for cellar gaps. "
+    "3. INVENTORY LOGIC: When asked for a recommendation, prioritize 'Open' bottles. "
+    "Strictly enforce the 'Ready to Drink' data. Discourage opening bottles marked to be held.\n"
+    "4. ROLES: Explain chemical synergy in food pairings. Act as purchasing advisor for cellar gaps. "
     "Use professional terminology (tannins, malolactic, terroir) and explain the why.\n"
-    "6. CONCISENESS: Keep responses structured, focused, and under 400 words. Never cut off mid-sentence."
+    "5. CONCISENESS: Keep responses structured, focused, and under 400 words. Never cut off mid-sentence."
 )
 
 # Appended to system prompt when long-term memory exists
 _MEMORY_SECTION_TEMPLATE = (
-    "\n\nזיכרון משיחות קודמות:\n"
+    "\n\nMemory from previous conversations:\n"
     "{summary}\n"
-    "השתמש בזיכרון הזה כהקשר רקע. אל תחזור עליו במפורש אלא אם נשאלת ישירות."
+    "Use this memory as background context. Do not repeat it explicitly unless directly asked."
 )
 
 # System instruction for the summarize() helper
@@ -96,8 +95,8 @@ class SommelierAI:
             )
 
         current_message = (
-            f"הנה המלאי הנוכחי שלי:\n\n{inventory_context}\n\n"
-            f"השאלה שלי:\n{user_message}"
+            f"Here is my current inventory:\n\n{inventory_context}\n\n"
+            f"My message/question:\n{user_message}"
         )
 
         return self._call_with_retry(
@@ -135,7 +134,7 @@ class SommelierAI:
             ),
         )
         response = chat.send_message(message)
-        return response.text or "לא הצלחתי לייצר תשובה. נסה שוב."
+        return response.text or "I couldn't generate a response. Please try again."
 
     def _single_generate(self, model_name: str, contents: str) -> str:
         """Single-turn generate_content call (for summarization)."""
