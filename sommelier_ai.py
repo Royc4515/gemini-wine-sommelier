@@ -96,8 +96,8 @@ class SommelierAI:
             )
 
         current_message = (
-            f"הנה המלאי הנוכחי שלי:\n\n{inventory_context}\n\n"
-            f"השאלה שלי:\n{user_message}"
+            f"Here is my current inventory:\n\n{inventory_context}\n\n"
+            f"My message/question:\n{user_message}"
         )
 
         return self._call_with_retry(
