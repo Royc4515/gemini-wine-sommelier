@@ -4,46 +4,42 @@
 [![Gemini API](https://img.shields.io/badge/Gemini_API-Enabled-orange?logo=google)](https://ai.google.dev/)
 [![Telegram Bot](https://img.shields.io/badge/Telegram_Bot-Active-blue?logo=telegram)](https://core.telegram.org/bots)
 [![Vercel](https://img.shields.io/badge/Vercel-Serverless-black?logo=vercel)](https://vercel.com)
+[![LinkedIn](https://img.shields.io/badge/LinkedIn-Connect-blue?logo=linkedin)](https://www.linkedin.com/in/roy-carmelli/)
+[![GitHub](https://img.shields.io/badge/GitHub-Follow-lightgray?logo=github)](https://github.com/Royc4515)
 
-> *"A professional sommelier in your pocket, intimately familiar with your personal wine cellar."*
+**Gemini Wine Sommelier** is a serverless Telegram bot powered by the Google Gemini API. It operates as a highly specialized, context-aware sommelier that pairs meal selections with your live wine inventory managed via Google Sheets.
 
-💬 **Need Help Setting This Up?**
-Feel free to open an issue on **[GitHub](https://github.com/Royc4515)** or connect with me on **[LinkedIn](https://www.linkedin.com/in/roy-carmelli/)**.
-
-**Gemini Wine Sommelier** is a serverless Telegram bot powered by the Google Gemini API. It acts as a personal, expert Sommelier that perfectly pairs food with your *actual* wine inventory, managed live via Google Sheets.
-
-Whether you're looking to open a top-tier Bordeaux, pair a heavy Syrah with a steak, or just do some cellar management, the bot can be completely customized to understand your specific taste profile, dietary restrictions, and preferred language to recommend exactly what to pour next.
+Designed for robust execution, it utilizes a Vercel-deployed serverless architecture, exponential backoff for API resiliency, and a dynamic LLM fallback chain.
 
 ---
 
-## 📸 Screenshots
+## 📸 Interface & Data State
 
-### The Sommelier in Action
-*(The bot providing a perfect pairing recommendation based on your active inventory)*
-![Chat Interaction](assets/chat-example.jpg)
-
-### The Cellar (Google Sheets)
-*(Your personal cellar managed directly from Google Sheets — always synced and up-to-date)*
-![Sheets Inventory](assets/sheets-inventory.png)
+| **Telegram Interface (LLM Pairing)** | **Google Sheets (Live Inventory)** |
+|:---:|:---:|
+| <img src="assets/chat-example.jpg" width="350"/> | <img src="assets/sheets-inventory.png" width="450"/> |
+| *Context-aware recommendations based on available bottles.* | *Source of truth for cellar management and status tracking.* |
 
 ---
 
 ## ✨ Key Features
 
-- **🧠 Advanced Gemini Intelligence**: Leverages the latest `google-genai` SDK with a robust model fallback chain (including `gemini-3.1-flash-lite`, `gemma-4-31b`, `gemini-2.5-flash`) and exponential backoff for a bulletproof experience.
-- **📊 Live Google Sheets Sync**: Connects directly to your Google Sheet to read real-time inventory. It knows exactly what bottles are "Open", "Closed", or "Reserved" and prioritizes open bottles.
-- **🍷 Fully Customizable Persona**: By default, the bot is a highly knowledgeable Sommelier. However, you can easily tweak its system prompt to match your specific needs (e.g., specific regions, dietary restrictions like Kosher/Vegan, preferred language, or conversational tone).
-- **☁️ Serverless Architecture**: Fully serverless backend using Vercel Serverless Functions and Telegram Webhooks. No active polling server required!
+- **Serverless Execution**: Deployed on Vercel Serverless Functions via Telegram Webhooks. No active polling or persistent compute.
+- **Dynamic Inventory Sync**: Live queries to Google Sheets. Explicitly respects "Open" vs. "Closed" bottle statuses for routing recommendations.
+- **Resilient AI Pipeline**: Integrates the `google-genai` SDK with an automatic fallback chain (`gemini-3.1-flash-lite` → `gemma-4-31b` → `gemini-2.5-flash`) and exponential backoff to mitigate transient API errors.
+- **Modular Persona Configuration**: The sommelier's language, dietary constraints, and domain expertise are strictly configurable via the system instructions within `sommelier_ai.py`.
 
 ---
 
-## 🏗 Architecture & Tech Stack
+## 🏗 Architecture & Data Flow
 
-- **Language**: Python 3.9+
-- **AI Integration**: `google-genai` SDK
-- **Data Layer**: `gspread` & `google-auth` (Google Sheets API)
-- **Messaging**: `python-telegram-bot`
-- **Deployment**: Vercel Serverless Functions
+The system employs a stateless, event-driven architecture designed for high availability:
+
+1. **Webhook Trigger**: A user sends a message via Telegram. Telegram fires an HTTP POST request to the Vercel Serverless Function endpoint (`api/index.py`).
+2. **State Retrieval**: The function synchronously fetches the latest cellar state directly from the configured Google Sheet via `urllib` and `csv` to minimize deployment payload size.
+3. **Context Assembly**: The user's query and the parsed inventory state are compiled into a unified context window.
+4. **Model Inference**: The request is routed to the Google Gemini API. If the primary model encounters a quota constraint or transient failure (e.g., `429 Too Many Requests`), the system automatically retries and gracefully degrades through the predefined fallback chain.
+5. **Response Dispatch**: The generated pairing recommendation is securely returned to the user via the Telegram Bot API.
 
 ---
 
